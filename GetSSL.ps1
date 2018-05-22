@@ -2,7 +2,7 @@
 Created by: David Nahodyl, Blue Feather 10/8/2016
 Contact: contact@bluefeathergroup.com
 Last Updated: 5/22/18
-Version: 0.7
+Version: 0.8
 
 Need help? We can set this up to run on your server for you! Send an email to
 contact@bluefeathergroup.com or give a call at (770) 765-6258
