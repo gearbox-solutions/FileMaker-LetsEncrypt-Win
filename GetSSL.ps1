@@ -1,8 +1,8 @@
-﻿<#
+<#
 Created by: David Nahodyl, Blue Feather 10/8/2016
 Contact: contact@bluefeathergroup.com
-Last Updated: 2/12/18
-Version: 0.6
+Last Updated: 5/22/18
+Version: 0.7
 
 Need help? We can set this up to run on your server for you! Send an email to
 contact@bluefeathergroup.com or give a call at (770) 765-6258
@@ -64,10 +64,14 @@ if (-not (Test-Administrator)){
 }
 
 
-$domainAliases = @();
-
-foreach ( $domain in $domains) {
-    $domainAliases += "$domain"+[guid]::NewGuid().ToString();
+$domainAliases = @();
+
+
+
+foreach ( $domain in $domains) {
+
+    $domainAliases += "$domain"+[guid]::NewGuid().ToString();
+
 }
 
 <#Install ACMESharp #>
@@ -101,17 +105,24 @@ Remove-Item $webConfigPath;
 
 <# Loop through the array of domains and validate each one with LE #>
 
-for ( $i=0; $i -lt $domains.length; $i++ ) {
+for ( $i=0; $i -lt $domains.length; $i++ ) {
+
 	<# Create a UUID alias to use for our domain request #>
     $domain = $domains[$i];
 	$domainAlias = $domainAliases[$i];
-    Write-Output "Performing challenge for $domain with alias $domainAlias";
+    Write-Output "Performing challenge for $domain with alias $domainAlias";
+
 
 	<#Create an entry for us to use with these requests using the alias we just generated #>
-	New-ACMEIdentifier -Dns $domain -Alias $domainAlias;
+	New-ACMEIdentifier -Dns $domain -Alias $domainAlias;
+
+
 	<# Use ACMESharp to automatically create the correct files to use for validation with LE #>
-	$response = Complete-ACMEChallenge $domainAlias -ChallengeType http-01 -Handler iis -HandlerParameters @{ WebSiteRef = 'FMWebSite'; SkipLocalWebConfig = $true } -Force;
-
+	$response = Complete-ACMEChallenge $domainAlias -ChallengeType http-01 -Handler iis -HandlerParameters @{ WebSiteRef = 'FMWebSite'; SkipLocalWebConfig = $true } -Force;
+
+
+
+
 	<# Sample Response
 	== Manual Challenge Handler - HTTP ==
 	  * Handle Time: [1/12/2016 1:16:34 PM]
@@ -123,17 +134,26 @@ for ( $i=0; $i -lt $domains.length; $i++ ) {
 	  * File Path: [.well-known/acme-challenge/2yRd04TwqiZTh6TWLZ1azL15QIOGaiRmx8MjAoA5QH0]
 	  * File Content: [2yRd04TwqiZTh6TWLZ1azL15QIOGaiRmx8MjAoA5QH0.H3URk7qFUvhyYzqJySfc9eM25RTDN7bN4pwil37Rgms]
 	  * MIME Type: [text/plain]------------------------------------
-	#>
+	#>
+
+
 	<# Let them know it's ready #>
-	Submit-ACMEChallenge $domainAlias -ChallengeType http-01 -Force;
+	Submit-ACMEChallenge $domainAlias -ChallengeType http-01 -Force;
+
+
 	<# Pause 10 seconds to wait for LE to validate our settings #>
-	Start-Sleep -s 10
-
+	Start-Sleep -s 10
+
+
+
 	<# Check the status #>
-	(Update-ACMEIdentifier $domainAlias -ChallengeType http-01).Challenges | Where-Object {$_.Type -eq "http-01"};
-
+	(Update-ACMEIdentifier $domainAlias -ChallengeType http-01).Challenges | Where-Object {$_.Type -eq "http-01"};
+
+
+
 	<# Good Response Sample
-
+
+
 	ChallengePart          : ACMESharp.Messages.ChallengePart
 	Challenge              : ACMESharp.ACME.HttpChallenge
 	Type                   : http-01
@@ -149,7 +169,8 @@ for ( $i=0; $i -lt $domains.length; $i++ ) {
 	SubmitDate             : 11/3/2016 12:34:48 AM
 	SubmitResponse         : {StatusCode, Headers, Links, RawContent...}
 
-	#>
+	#>
+
 }
 
 
@@ -189,7 +210,9 @@ Get-ACMECertificate $certAlias -ExportIssuerPEM $intermPath;
 cd $fmsPath'\Database Server\';
 
 <# Install the certificate #>
-.\fmsadmin certificate import $certPath;
+<#fmsadmin certificate import requires confirmation in 17, so put a ' echo y |' in here to feed input. This won't do anything in earlier versions. #>
+echo y | .\fmsadmin certificate import $certPath; 
+
 
 <# Append the intermediary certificate to support older FMS before 15 #>
 Add-Content $fmsPath'CStore\serverCustom.pem' '
