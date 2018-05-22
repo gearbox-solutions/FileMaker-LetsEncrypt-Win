@@ -210,8 +210,8 @@ Get-ACMECertificate $certAlias -ExportIssuerPEM $intermPath;
 cd $fmsPath'\Database Server\';
 
 <# Install the certificate #>
-<#fmsadmin certificate import requires confirmation in 17, so put a ' echo y |' in here to feed input. This won't do anything in earlier versions. #>
-echo y | .\fmsadmin certificate import $certPath; 
+<#fmsadmin certificate import requires confirmation in 17, so put a '-y' in here to skip input. This won't do anything in earlier versions. #>
+.\fmsadmin certificate import $certPath -y; 
 
 
 <# Append the intermediary certificate to support older FMS before 15 #>
