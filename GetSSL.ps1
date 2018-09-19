@@ -211,7 +211,7 @@ cd $fmsPath'\Database Server\';
 
 <# Install the certificate #>
 <#fmsadmin certificate import requires confirmation in 17, so put a '-y' in here to skip input. This won't do anything in earlier versions. #>
-.\fmsadmin certificate import $certPath -y; 
+.\fmsadmin certificate import $certPath -y;
 
 
 <# Append the intermediary certificate to support older FMS before 15 #>
