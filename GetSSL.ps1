@@ -1,8 +1,8 @@
 <#
 Created by: David Nahodyl, Blue Feather 10/8/2016
 Contact: contact@bluefeathergroup.com
-Last Updated: 5/22/18
-Version: 0.8
+Last Updated: 10/24/18
+Version: 0.9
 
 Need help? We can set this up to run on your server for you! Send an email to
 contact@bluefeathergroup.com or give a call at (770) 765-6258
@@ -79,19 +79,39 @@ Import-Module ACMESharp;
 
 <# Initialize the vault to either Live or Staging#>
 
-<# Live Server #>
-Initialize-ACMEVault;
 
-<# Staging Server #>
-#Initialize-ACMEVault -BaseURI https://acme-staging.api.letsencrypt.org/
+if (!(Get-ACMEVault))
+{
+    <# Live Server #>
+    #Initialize-ACMEVault;
+
+    <# Staging Server #>
+    Initialize-ACMEVault -BaseURI https://acme-staging.api.letsencrypt.org/
+}
+
 
 <# Regiser contact info with LE #>
 New-ACMERegistration -Contacts mailto:$email -AcceptTos;
 
+<#make a folder if we need to #>
+$webConfigDir =  $fmsPath + "HTTPServer\conf\.well-known\acme-challenge\"
+try{
+New-Item -ItemType Directory -Path  $webConfigDir;
+   }
+Catch{
+        <# this folder may already exist, so it's ok if we hit an error here#>
+    }
+
 <# ACMESharp keeps creating a web.config that doesn't work, so let's delete it and make our own good one #>
-$webConfigPath = $fmsPath + 'HTTPServer\conf\.well-known\acme-challenge\web.config';
+$webConfigPath = $webConfigDir + '\web.config';
 <# Delete the bad one #>
+try{
 Remove-Item $webConfigPath;
+}
+Catch{
+    <# we don't need to do anything if this fails #>
+}
+
 
 <# Write a new good one #>
 ' <configuration>
@@ -117,9 +137,15 @@ for ( $i=0; $i -lt $domains.length; $i++ ) {
 	New-ACMEIdentifier -Dns $domain -Alias $domainAlias;
 
 
-	<# Use ACMESharp to automatically create the correct files to use for validation with LE #>
-	$response = Complete-ACMEChallenge $domainAlias -ChallengeType http-01 -Handler iis -HandlerParameters @{ WebSiteRef = 'FMWebSite'; SkipLocalWebConfig = $true } -Force;
-
+    <# Use ACMESharp to automatically create the correct files to use for validation with LE #>
+    try {
+        $response = Complete-ACMEChallenge $domainAlias -ChallengeType http-01 -Handler iis -HandlerParameters @{ WebSiteRef = 'FMWebSite'; SkipLocalWebConfig = $true } -Force;
+    }
+    Catch {
+        $exceptionMessage = $_.Exception.Message;
+        Throw ("Error completing challenge for $domain with alias " + $domainAlias + ": " + $exceptionMessage);
+        Exit;
+    }
 
 
 
@@ -211,7 +237,7 @@ cd $fmsPath'\Database Server\';
 
 <# Install the certificate #>
 <#fmsadmin certificate import requires confirmation in 17, so put a '-y' in here to skip input. This won't do anything in earlier versions. #>
-.\fmsadmin certificate import $certPath -y;
+.\fmsadmin certificate import $certPath -y; 
 
 
 <# Append the intermediary certificate to support older FMS before 15 #>
