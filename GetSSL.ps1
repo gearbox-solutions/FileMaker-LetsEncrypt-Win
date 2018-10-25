@@ -83,10 +83,10 @@ Import-Module ACMESharp;
 if (!(Get-ACMEVault))
 {
     <# Live Server #>
-    #Initialize-ACMEVault;
+    Initialize-ACMEVault;
 
     <# Staging Server #>
-    Initialize-ACMEVault -BaseURI https://acme-staging.api.letsencrypt.org/
+    #Initialize-ACMEVault -BaseURI https://acme-staging.api.letsencrypt.org/
 }
 
 
