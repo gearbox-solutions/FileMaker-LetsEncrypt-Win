@@ -1,8 +1,8 @@
 <#
 Created by: David Nahodyl, Blue Feather 10/8/2016
 Contact: contact@bluefeathergroup.com
-Last Updated: 10/24/18
-Version: 0.9
+Last Updated: 2/20/2020
+Version: 2.0
 
 Need help? We can set this up to run on your server for you! Send an email to
 contact@bluefeathergroup.com or give a call at (770) 765-6258
@@ -10,14 +10,14 @@ contact@bluefeathergroup.com or give a call at (770) 765-6258
 
 <#  Change the domain variable to the domain/subdomain for which you would like
 	an SSL Certificate#>
-$domains = @('fms.mycompany.com');
+$domains = 'fms.mydomain.com';
 
 <# You can also get a certificate for multiple host name. Uncomment the line below
 and enter your domains in the array matching the example format if you'd like a
 mult-domain certificate. Let's Encrypt will peform separate validation for each
 of the domains, so be sure that your server is reachable at all of them before
 attempting to get a certificate. #>
-#$domains = @('fms.mycompany.com', 'secondaddress.mycompany.com');
+# $domains = 'fms.mycompany.com,second.mycompany.com';
 
 
 <# 	Change the contact email address to your real email address so that Let's Encrypt
@@ -27,19 +27,19 @@ $email = 'test@mydomain.com'
 <# Enter the path to your FileMaker Server directory, ending in a backslash \ #>
 $fmsPath = 'C:\Program Files\FileMaker\FileMaker Server\'
 
+<# enter the path to le64.exe #>
+$le64Path = 'C:\Program Files\FileMaker\le64.exe'
 
+<# Enable or disable test mode with a boolean 1 or 0. This is set true (1) by default for safety during initial testing but will need
+# to be set to false (0) to get a real certificate.#>
+$testMode = 1
 
 <#
-You should not need to edit anything below this point
--------------------------------#>
+You should not need to edit anything below this point.
+---------------------------------------------------------------------------------------------------#>
 
-<# Check to make sure people changed the email address and domain #>
-#if ($email -eq('test@mydomain.com')){
-#    Write-Output 'You must enter your real email address! The script will now exit.'
-#    exit
-#}
 if ($domain -eq('fms.mydomain.com')){
-    Write-Output 'You must enter your real doamin! The script will now exit.'
+    Write-Output 'You must enter your real domain! The script will now exit.'
     exit
 }
 
@@ -64,51 +64,36 @@ if (-not (Test-Administrator)){
 }
 
 
-$domainAliases = @();
-
-
-
-foreach ( $domain in $domains) {
-
-    $domainAliases += "$domain"+[guid]::NewGuid().ToString();
-
-}
-
-<#Install ACMESharp #>
-Import-Module ACMESharp;
-
-<# Initialize the vault to either Live or Staging#>
-
-
-if (!(Get-ACMEVault))
-{
-    <# Live Server #>
-    Initialize-ACMEVault;
-
-    <# Staging Server #>
-    #Initialize-ACMEVault -BaseURI https://acme-staging.api.letsencrypt.org/
-}
-
-
-<# Regiser contact info with LE #>
-New-ACMERegistration -Contacts mailto:$email -AcceptTos;
-
 <#make a folder if we need to #>
-$webConfigDir =  $fmsPath + "HTTPServer\conf\.well-known\acme-challenge\"
-try{
-New-Item -ItemType Directory -Path  $webConfigDir;
-   }
-Catch{
-        <# this folder may already exist, so it's ok if we hit an error here#>
+$acmeDir = $fmsPath + "HTTPServer\conf\.well-known\acme-challenge\"
+
+
+<# test if the acme folder exists already #>
+if (-not(Test-Path $acmeDir))
+{
+    <#it doesn't, so make the acme dir #>
+    try
+    {
+        New-Item -ItemType Directory -Path  $acmeDir;
     }
+    Catch
+    {
+        <# Error creating the directory #>
+        Write-Output 'Unable to create directory ' + $acmeDir
+        exit;
+    }
+}
+
 
 <# ACMESharp keeps creating a web.config that doesn't work, so let's delete it and make our own good one #>
-$webConfigPath = $webConfigDir + '\web.config';
+$webConfigPath = $acmeDir + '\web.config';
 <# Delete the bad one #>
-try{
-Remove-Item $webConfigPath;
+try
+{
+    Remove-Item $webConfigPath;
 }
-Catch{
+Catch
+{
     <# we don't need to do anything if this fails #>
 }
 
@@ -122,123 +107,38 @@ Catch{
      </system.webServer>
  </configuration>' | Out-File -FilePath $webConfigPath;
 
-
-<# Loop through the array of domains and validate each one with LE #>
-
-for ( $i=0; $i -lt $domains.length; $i++ ) {
-
-	<# Create a UUID alias to use for our domain request #>
-    $domain = $domains[$i];
-	$domainAlias = $domainAliases[$i];
-    Write-Output "Performing challenge for $domain with alias $domainAlias";
-
-
-	<#Create an entry for us to use with these requests using the alias we just generated #>
-	New-ACMEIdentifier -Dns $domain -Alias $domainAlias;
-
-
-    <# Use ACMESharp to automatically create the correct files to use for validation with LE #>
-    try {
-        $response = Complete-ACMEChallenge $domainAlias -ChallengeType http-01 -Handler iis -HandlerParameters @{ WebSiteRef = 'FMWebSite'; SkipLocalWebConfig = $true } -Force;
-    }
-    Catch {
-        $exceptionMessage = $_.Exception.Message;
-        Throw ("Error completing challenge for $domain with alias " + $domainAlias + ": " + $exceptionMessage);
-        Exit;
-    }
+$keyPath = $fmsPath + 'CStore\serverKey.pem'
+$certPath = $fmsPath + 'CStore\crt.pem'
+$csrPath = $fmsPath + 'CStore\domain.csr'
+$accountPath = $fmsPath + 'CStore\account.key'
 
 
 
-	<# Sample Response
-	== Manual Challenge Handler - HTTP ==
-	  * Handle Time: [1/12/2016 1:16:34 PM]
-	  * Challenge Token: [2yRd04TwqiZTh6TWLZ1azL15QIOGaiRmx8MjAoA5QH0]
-	To complete this Challenge please create a new file
-	under the server that is responding to the hostname
-	and path given with the following characteristics:
-	  * HTTP URL: [http://myserver.example.com/.well-known/acme-challenge/2yRd04TwqiZTh6TWLZ1azL15QIOGaiRmx8MjAoA5QH0]
-	  * File Path: [.well-known/acme-challenge/2yRd04TwqiZTh6TWLZ1azL15QIOGaiRmx8MjAoA5QH0]
-	  * File Content: [2yRd04TwqiZTh6TWLZ1azL15QIOGaiRmx8MjAoA5QH0.H3URk7qFUvhyYzqJySfc9eM25RTDN7bN4pwil37Rgms]
-	  * MIME Type: [text/plain]------------------------------------
-	#>
+$params = "--key $accountPath", "--email $email", "--csr $csrPath", "--csr-key $keyPath", "--crt $certPath"," --domains  $domains", "--generate-missing", "--unlink", "--path $acmeDir"
 
-
-	<# Let them know it's ready #>
-	Submit-ACMEChallenge $domainAlias -ChallengeType http-01 -Force;
-
-
-	<# Pause 10 seconds to wait for LE to validate our settings #>
-	Start-Sleep -s 10
-
-
-
-	<# Check the status #>
-	(Update-ACMEIdentifier $domainAlias -ChallengeType http-01).Challenges | Where-Object {$_.Type -eq "http-01"};
-
-
-
-	<# Good Response Sample
-
-
-	ChallengePart          : ACMESharp.Messages.ChallengePart
-	Challenge              : ACMESharp.ACME.HttpChallenge
-	Type                   : http-01
-	Uri                    : https://acme-v01.api.letsencrypt.org/acme/challenge/a7qPufJw0Wdk7-Icw6V3xDDlXj1Ag5CVr4aZRw2H27
-	                         A/323393389
-	Token                  : CqAhe31xGDeaqzf01dPx2j9NUqsBVqT1LpQ_Rhx1GiE
-	Status                 : valid
-	OldChallengeAnswer     : [, ]
-	ChallengeAnswerMessage :
-	HandlerName            : manual
-	HandlerHandleDate      : 11/3/2016 12:33:16 AM
-	HandlerCleanUpDate     :
-	SubmitDate             : 11/3/2016 12:34:48 AM
-	SubmitResponse         : {StatusCode, Headers, Links, RawContent...}
-
-	#>
-
+<# only append live mode if test is disabled #>
+if (-not $testMode)
+{
+    $params = "$params --live"
 }
 
+<# run the executable and get our new certificates #>
 
+& $le64Path $params
 
-$certAlias = 'cert-'+[guid]::NewGuid().ToString();
+<# check if the certificate succeeded and exit if there was a failure #>
+if ($LASTEXITCODE -ne 0)
+{
+    exit;
+}
 
-<# Ready to get the certificate #>
-New-ACMECertificate $domainAliases[0] -Generate -AlternativeIdentifierRefs $domainAliases -Alias $certAlias;
-Submit-ACMECertificate $certAlias;
-
-<# Pause 10 seconds to wait for LE to create the certificate #>
-Start-Sleep -s 10
-
-<# Check the status $certAlias #>
-Update-ACMECertificate $certAlias;
-
-
-<# Look for a serial number #>
-
-
-<# Export the private key #>
-$keyPath = $fmsPath + 'CStore\serverKey.pem'
-Remove-Item $keyPath;
-Get-ACMECertificate $certAlias -ExportKeyPEM $keyPath;
-
-<# Export the certificate #>
-$certPath = $fmsPath + 'CStore\crt.pem'
-Remove-Item $certPath;
-Get-ACMECertificate $certAlias -ExportCertificatePEM $certPath;
-
-<# Export the Intermediary #>
-$intermPath = $fmsPath + 'CStore\interm.pem'
-Remove-Item $intermPath;
-Get-ACMECertificate $certAlias -ExportIssuerPEM $intermPath;
 
 <# cd to FMS directory to run fmsadmin commands #>
 cd $fmsPath'\Database Server\';
 
 <# Install the certificate #>
 <#fmsadmin certificate import requires confirmation in 17, so put a '-y' in here to skip input. This won't do anything in earlier versions. #>
-.\fmsadmin certificate import $certPath -y; 
-
+.\fmsadmin certificate import $certPath -y;
 
 <# Append the intermediary certificate to support older FMS before 15 #>
 Add-Content $fmsPath'CStore\serverCustom.pem' '
