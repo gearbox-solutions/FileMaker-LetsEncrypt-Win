@@ -1,15 +1,15 @@
-<#
+ <#
 Created by: David Nahodyl, Blue Feather 10/8/2016
 Contact: contact@bluefeathergroup.com
-Last Updated: 2/20/2020
-Version: 2.0
+Last Updated: 4/7/2020
+Version: 2.1
 
 Need help? We can set this up to run on your server for you! Send an email to
 contact@bluefeathergroup.com or give a call at (770) 765-6258
 #>
 
 <#  Change the domain variable to the domain/subdomain for which you would like
-	an SSL Certificate#>
+    an SSL Certificate#>
 $domains = 'fms.mydomain.com';
 
 <# You can also get a certificate for multiple host name. Uncomment the line below
@@ -17,26 +17,39 @@ and enter your domains in the array matching the example format if you'd like a
 mult-domain certificate. Let's Encrypt will peform separate validation for each
 of the domains, so be sure that your server is reachable at all of them before
 attempting to get a certificate. #>
-# $domains = 'fms.mycompany.com,second.mycompany.com';
+#$domains = 'fms.mydomain.com,subdomain.mydomain.com';
 
 
-<# 	Change the contact email address to your real email address so that Let's Encrypt
-	can contact you if there are any problems #>
+<#  Change the contact email address to your real email address so that Let's Encrypt
+    can contact you if there are any problems #>
 $email = 'test@mydomain.com'
 
 <# Enter the path to your FileMaker Server directory, ending in a backslash \ #>
 $fmsPath = 'C:\Program Files\FileMaker\FileMaker Server\'
 
-<# enter the path to le64.exe #>
-$le64Path = 'C:\Program Files\FileMaker\le64.exe'
+<# Enter the path to le64.exe #>
+$le64Path = 'C:\Program Files\FileMaker\SSL Renewal\le64.exe'
 
 <# Enable or disable test mode with a boolean 1 or 0. This is set true (1) by default for safety during initial testing but will need
 # to be set to false (0) to get a real certificate.#>
 $testMode = 1
 
+
+
 <#
 You should not need to edit anything below this point.
 ---------------------------------------------------------------------------------------------------#>
+
+$outPath = $PSScriptRoot + '\'
+$logFile = $outPath + '\SSL-Renewal.log'
+
+<# Disable any already-running transcript #>
+$ErrorActionPreference="SilentlyContinue"
+Stop-Transcript | out-null
+$ErrorActionPreference = "Continue" # or "Stop"
+
+<# Start the transcript #>
+Start-Transcript -path $logFile
 
 if ($domain -eq('fms.mydomain.com')){
     Write-Output 'You must enter your real domain! The script will now exit.'
@@ -107,10 +120,10 @@ Catch
      </system.webServer>
  </configuration>' | Out-File -FilePath $webConfigPath;
 
-$keyPath = $fmsPath + 'CStore\serverKey.pem'
-$certPath = $fmsPath + 'CStore\crt.pem'
-$csrPath = $fmsPath + 'CStore\domain.csr'
-$accountPath = $fmsPath + 'CStore\account.key'
+$keyPath = $outPath+ 'key.pem'
+$certPath = $outPath+ 'certificate.pem'
+$csrPath = $outPath + 'domain.csr'
+$accountPath = $outPath + 'account.key'
 
 
 
@@ -129,20 +142,38 @@ if (-not $testMode)
 <# check if the certificate succeeded and exit if there was a failure #>
 if ($LASTEXITCODE -ne 0)
 {
-    exit;
+    <# Stop the transcript #>
+    Stop-Transcript
+    exit
 }
 
 
 <# cd to FMS directory to run fmsadmin commands #>
-cd $fmsPath'\Database Server\';
+cd $fmsPath'\Database Server\'
 
-<# Install the certificate #>
-<#fmsadmin certificate import requires confirmation in 17, so put a '-y' in here to skip input. This won't do anything in earlier versions. #>
-.\fmsadmin certificate import $certPath -y;
 
-<# Append the intermediary certificate to support older FMS before 15 #>
-Add-Content $fmsPath'CStore\serverCustom.pem' '
------BEGIN CERTIFICATE-----
+$cstorePath = $fmsPath + 'CStore\'
+$liveKeyPath = $cstorePath + 'serverKey.pem'
+$oldKeyPath = $cstorePath + 'oldKey.pem'
+
+Write-Output 'Comparing private key files'
+
+
+$haveMovedKey = 0
+
+if(Compare-Object -ReferenceObject $(Get-Content $keyPath) -DifferenceObject $(Get-Content $liveKeyPath)){
+Write-Output 'Key is different. Moving old key and replacing'
+    Move-Item -Path $liveKeyPath -Destination $oldKeyPath
+    $haveMovedKey = 1
+} else {
+    Write-Output 'Keys are the same'
+}
+
+
+
+Write-Output writing out intermediary
+$intermediaryPath = $outPath + 'intermediary.pem';
+$intermediaryContents = '-----BEGIN CERTIFICATE-----
 MIIEkjCCA3qgAwIBAgIQCgFBQgAAAVOFc2oLheynCDANBgkqhkiG9w0BAQsFADA/
 MSQwIgYDVQQKExtEaWdpdGFsIFNpZ25hdHVyZSBUcnVzdCBDby4xFzAVBgNVBAMT
 DkRTVCBSb290IENBIFgzMB4XDTE2MDMxNzE2NDA0NloXDTIxMDMxNzE2NDA0Nlow
@@ -170,6 +201,39 @@ PfZ+G6Z6h7mjem0Y+iWlkYcV4PIWL1iwBi8saCbGS5jN2p8M+X+Q7UNKEkROb3N6
 KOqkqm57TH2H3eDJAkSnh6/DNFu0Qg==
 -----END CERTIFICATE-----'
 
+Set-Content -Path $intermediaryPath -Value $intermediaryContents
+
+
+
+Compare-Object $keyPath $liveKeyPath
+
+Write-Output 'Attempting to install certificate to FileMaker Server'
+
+<# Install the certificate #>
+<#fmsadmin certificate import requires confirmation in 17, so put a '-y' in here to skip input. This won't do anything in earlier versions. #>
+.\fmsadmin certificate import $certPath --keyfile $keyPath --intermediateCA $intermediaryPath -y;
+
+
+<# Check and make sure the install succeeded #>
+if ($LASTEXITCODE -ne 0)
+{
+    <# The certificate install failed #>
+    Write-Output 'fmsadmin certificate install command failed.'
+
+    <# Move the old private key back if there was a problem #>
+    if ($haveMovedKey){
+        Write-Output 'Moving old key back to original location'
+        Move-Item -Path $oldKeyPath -Destination $liveKeyPath
+    }
+
+    Write-Output 'Exiting Script'
+    <# Stop the transcript #>
+    Stop-Transcript
+    exit;
+}
+
+Write-Output 'FMS certificate import command completed'
+
 <# Restart the FMS service #>
 Write-Output 'Automatically Stopping FileMaker Server'
 net stop 'FileMaker Server';
@@ -177,5 +241,8 @@ Write-Output 'Automatically Starting FileMaker Server'
 net start 'FileMaker Server';
 
 
+<# Stop the transcript #>
+Stop-Transcript
+
 <# All done! Exit. #>
-exit;
+exit; 
