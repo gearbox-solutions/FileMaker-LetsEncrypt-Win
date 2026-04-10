@@ -51,7 +51,7 @@ $ErrorActionPreference = "Continue" # or "Stop"
 <# Start the transcript #>
 Start-Transcript -path $logFile
 
-if ($domain -eq('fms.mydomain.com')){
+if ($domains -eq('fms.mydomain.com')){
     Write-Output 'You must enter your real domain! The script will now exit.'
     exit
 }
